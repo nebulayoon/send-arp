@@ -247,14 +247,12 @@ int main(int argc, char* argv[]) {
 		
 		print_info(sender_ip, target_ip);
 		pthread_create(&thread[i], NULL, arp_send_attack, (void*)attack_data);
-
-		// free(attack_data);
 	}
 	
 	for(int i = 2; i < argc; i += 2){
 		pthread_join(thread[i], NULL);
 	}
 
-	// 그다지 바꾼게 없는데
+	free(thread);
 	pcap_close(handle);
 }
