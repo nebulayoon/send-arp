@@ -13,7 +13,11 @@ ip.o: ip.h ip.cpp
 
 mac.o : mac.h mac.cpp
 
-send-arp-test: main.o arphdr.o ethhdr.o ip.o mac.o
+util.o : util.h util.cpp
+
+arpattk.o : mainstruct.h arpattk.h arpattk.cpp
+
+send-arp-test: main.o arphdr.o ethhdr.o ip.o mac.o util.o arpattk.o
 	$(LINK.cc) $^ $(LOADLIBES) $(LDLIBS) -o $@
 
 clean:
